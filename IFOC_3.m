@@ -45,14 +45,14 @@ B2 = - Polos/(2*J);
 
 %% Ganhos Controladores
 
-KP_w = 14.697059 ;
-KI_w =     128.19924 ;
+KP_w = 585.7158     ;
+KI_w =    0  ;
 
-KP_id =  37.331064;
-KI_id = 3007.0195;
+KP_id = 2.878055;
+KI_id =  326.8236;
 
-KP_iq =   2355.132 ;
-KI_iq =813.19673;
+KP_iq =  0.6610145  ;
+KI_iq = 0;
 
 %% Inicialização das variaveis
 
@@ -222,8 +222,6 @@ for k = 1:Np
 
     iqs_vetor(k) = Iqs;
     ids_vetor(k) = Ids;
-    ialpha_vetor(k) = Ialpha;
-    ibeta_vetor(k) = Ibeta;
     Te_vetor(k) = Te;
     wrpm_vetor(k) = wrpm;
     wr_vetor(k) = wr;
@@ -253,18 +251,10 @@ legend('Ids')
 
 figure
 % Plotando os dados
-plot(t,iqs_vetor); % tom de cinza escuro
-legend('Iqs')
+plot(t,iqs_vetor, t ,iqs_ref); % tom de cinza escuro
+legend('Iqs', 'Ref')
 
 figure
 % Plotando os dados
 plot(t,Te_vetor,t, Tl); % tom de cinza escuro
 legend('Te', 'TL')
-
-figure
-plot(t, e_iq_vetor);
-legend('Iq erro')
-
-figure
-plot(t, e_id_vetor)
-legend('Id erro')

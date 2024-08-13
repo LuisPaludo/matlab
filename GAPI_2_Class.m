@@ -1,3 +1,7 @@
+clear all;
+close all;
+clear;
+
 % Número de indivíduos na população
 popSize = 100;
 
@@ -10,6 +14,9 @@ crossoverRate = 1;
 % Taxa de mutação
 mutationRate = 0.15;
 
+% ParamNum
+paramNum = 6;
+
 % Limites dos parâmetros
 paramBounds = [0, 10000; % KP WR
     0, 10000; % KI WR
@@ -17,8 +24,6 @@ paramBounds = [0, 10000; % KP WR
     0, 10000;
     0, 10000; % KP IQ/ID
     0, 10000];
-
-func = 'f_motor_low_data';
 
 % Definindo os parâmetros
 selectionMethods = {'Torneio', 'Roleta', 'Estoc', 'Boltzmann'};
@@ -39,7 +44,7 @@ Rs = 0.6759;
 Rr = 0.2615;
 Lm = 0.0387;
 Lls = 0.00280;
-
+buffer = 10;
 
 % Loop para número de execuções
 for loopAtual = 1:numExecucoes
@@ -57,7 +62,7 @@ for loopAtual = 1:numExecucoes
                 disp(['**************** Run: ' num2str(loopAtual) ' -> '  selectionMethods{selIdx} ' + ' crossoverMethods{crossIdx} ' + ' mutationMethods{mutIdx} ' ****************']);
 
                 % Criar e inicializar o objeto GA
-                gaObj = GAPI(popSize, numGenerations, crossoverRate, mutationRate, paramBounds, Rs, Rr, Lm, Lls, 1);
+                gaObj = GAPI_2(popSize, numGenerations, crossoverRate, mutationRate, paramNum, paramBounds, Rs, Rr, Lm, Lls, buffer);
                 gaObj = gaObj.Initialize;
 
                 % Preparar argumentos de seleção como uma célula
