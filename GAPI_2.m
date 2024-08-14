@@ -102,7 +102,7 @@ classdef GAPI_2
                 tournamentSize = selectionArgs{2};
             end
             if strcmp(selection, 'Estoc')
-                     = selectionArgs{2};
+                estocSize  = selectionArgs{2};
             end
             if strcmp(selection, 'Boltzmann')
                 % disp('Digite a temperatura Inicial')
@@ -805,7 +805,7 @@ classdef GAPI_2
             UI_iq = 0;
             t = 0:Tsc:Np*Tsc-Tsc;
             custo_erros = 0;
-            Iqs_atrasado = 0; 
+            Iqs_atrasado = 0;
             Ids_atrasado = 0;
 
             %% buffer de atraso
@@ -928,7 +928,7 @@ classdef GAPI_2
                 % Desloca o buffer para a direita (atualiza o atraso)
                 Iqs_buffer = [Iqs, Iqs_buffer(1:end-1)];
                 Ids_buffer = [Ids, Ids_buffer(1:end-1)];
-                
+
                 % Extrai os valores atrasados do buffer
                 Iqs_atrasado = Iqs_buffer(end);  % Valor com atraso de buffer_size amostras
                 Ids_atrasado = Ids_buffer(end);  % Valor com atraso de buffer_size amostras
