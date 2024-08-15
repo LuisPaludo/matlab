@@ -25,9 +25,6 @@ classdef GAPI_2
         ids_vetor
         t_vetor
         executionTime
-        simp_wr
-        simp_iqs
-        simp_ids
         Rs
         Rr
         Lm
@@ -52,9 +49,6 @@ classdef GAPI_2
             obj.averageFitnessHistory = zeros(numGenerations, 1);
             obj.bestIndividuals = zeros(numGenerations, length(paramBounds));
             obj.generation = 0;
-            obj.simp_wr = 891.11;
-            obj.simp_iqs = 4.85;
-            obj.simp_ids = 9.72;
 
             obj.buffer = buffer;
 
@@ -150,20 +144,10 @@ classdef GAPI_2
                         obj.parent2 = obj.rouletteWheelSelection();
                     end
 
-                    if strcmp(selection, 'Rank')
-                        obj.parent1 = obj.rankSelection();
-                        obj.parent2 = obj.rankSelection();
-                    end
-
                     if strcmp(selection, 'Estoc')
                         parents = obj.stochasticUniversalSelection(estocSize);
                         obj.parent1 = parents(1,:);
                         obj.parent2 = parents(2,:);
-                    end
-
-                    if strcmp(selection, 'Boltzmann')
-                        obj.parent1 = obj.boltzmannSelection(tempInicial, tempFinal);
-                        obj.parent2 = obj.boltzmannSelection(tempInicial, tempFinal);
                     end
 
                     % Crossover
@@ -176,9 +160,6 @@ classdef GAPI_2
                         end
                         if strcmp(crossover, '2P')
                             offspring = obj.twoPointCrossover();
-                        end
-                        if strcmp(crossover, 'Arit')
-                            offspring = obj.arithmeticCrossover();
                         end
                         if strcmp(crossover, 'Uniform')
                             offspring = obj.uniformCrossover();
@@ -205,9 +186,6 @@ classdef GAPI_2
                     end
                     if strcmp(mutation, 'Creep')
                         offspring = obj.creepMutate(offspring);
-                    end
-                    if strcmp(mutation, 'Inv')
-                        offspring = obj.inversionMutate(offspring);
                     end
 
                     % Adicionar à nova população
@@ -317,37 +295,6 @@ classdef GAPI_2
             selected = obj.pop(selectedIdx, :);
         end
 
-        % Seleção por Rank
-        function selected = rankSelection(obj)
-            % Objetivo: Os indivíduos são classificados com base em sua aptidão,
-            % e a probabilidade de seleção é determinada pela sua classificação, não pela sua aptidão absoluta.
-            % pop: População atual
-            % fitnessScores: Vetor de aptidões dos indivíduos
-
-            % Invertendo as aptidões
-            % A inversão é feita para que menores custos resultem em maiores valores de aptidão.
-            invertedFitnessScores = 1 ./ obj.fitnessScores;
-            % Tratando valores NaN
-            % Substituindo NaNs por um valor pequeno para evitar problemas na seleção
-            nanIndices = isnan(invertedFitnessScores);
-            invertedFitnessScores(nanIndices) = 1e-10;
-            % Classificar os indivíduos
-            [~, sortedIndices] = sort(invertedFitnessScores);
-
-            % Atribuir probabilidades baseadas na classificação
-            numIndividuals = length(invertedFitnessScores);
-            rankProbabilities = ((1:numIndividuals) / sum(1:numIndividuals))';
-
-            % Probabilidades cumulativas
-            cumulativeProbabilities = cumsum(rankProbabilities);
-
-            % Selecionando um indivíduo
-            r = rand;
-            search = find(cumulativeProbabilities >= r, 1, 'first');
-            selectedIdx = sortedIndices(search);
-            selected = obj.pop(selectedIdx, :);
-        end
-
         % Seleção Estocástica Universal
         function selected = stochasticUniversalSelection(obj, numSelected)
             % pop: População atual
@@ -383,44 +330,6 @@ classdef GAPI_2
             end
 
 
-        end
-
-        % Seleção de Boltzmann
-        function selected = boltzmannSelection(obj, tempInicial, tempFinal)
-            % Objetivo: Alterar a escala de aptidão dos indivíduos com base em uma "temperatura" que diminui ao longo do tempo
-            % pop: População atual
-            % fitnessScores: Vetor de aptidões dos indivíduos
-            % gen: Geração atual
-            % maxGen: Número máximo de gerações
-
-            % Parâmetros da seleção de Boltzmann
-            % Os valores de T_initial e T_final podem ser ajustados de acordo com as necessidades específicas do seu problema.
-            % A "temperatura" começa alta e diminui a cada geração, alterando a escala de aptidão. Temperaturas mais altas
-            % favorecem a exploração (menos pressão seletiva), e temperaturas mais baixas favorecem a explotação (maior pressão seletiva).
-            T_initial = tempInicial; % Temperatura inicial
-            T_final = tempFinal; % Temperatura final
-            % Calculando a temperatura atual com base na geração
-            T = T_initial * (T_final / T_initial) ^ (obj.generation / obj.numGenerations);
-
-            % Ajustando as aptidões com base na distribuição de Boltzmann
-            % As aptidões são ajustadas usando a função exponencial negativa baseada na temperatura atual.
-            % Isso altera as probabilidades de seleção dos indivíduos.
-            adjustedFitnessScores = exp(-(obj.fitnessScores/10) / T);
-            totalAdjustedFitness = sum(adjustedFitnessScores);
-
-            % Probabilidades de seleção
-            selectionProbabilities = adjustedFitnessScores / totalAdjustedFitness;
-
-            % Probabilidades cumulativas
-            cumulativeProbabilities = cumsum(selectionProbabilities);
-
-            % Selecionando um indivíduo
-            r = rand;
-            selectedIdx = find(cumulativeProbabilities >= r, 1, 'first');
-            selected = obj.pop(selectedIdx, :);
-            if(isempty(selected))
-                disp('vai dar erro')
-            end
         end
 
         %% Métodos de Crossover
@@ -490,32 +399,6 @@ classdef GAPI_2
             % descendentes do que o crossover de um ponto, pois permite a troca de segmentos maiores e mais variados dos cromossomos dos
             % pais.
             % Esta técnica pode ser particularmente útil em espaços de busca onde a correlação entre genes adjacentes é importante.
-        end
-
-        % Crossover Aritmético
-        function offspring = arithmeticCrossover(obj)
-            % Objetivo: Produzir um novo indivíduo (descendente) a partir de dois
-            % indivíduos existentes (pais) usando crossover aritmético.
-            % parent1, parent2: Dois indivíduos pais
-
-            % Número de genes (parâmetros)
-            numGenes = length(obj.parent1);
-
-            % Inicializar descendente com zeros
-            offspring = zeros(1, numGenes);
-
-            % Crossover aritmético para cada gene
-            for i = 1:numGenes
-                % Coeficiente aleatório para cada gene
-                alpha = rand();
-
-                % Valor do gene do descendente como média ponderada
-                offspring(i) = alpha * obj.parent1(i) + (1 - alpha) * obj.parent2(i);
-            end
-
-            % Este método é eficaz para problemas com variáveis contínuas.
-            % Ele pode criar descendentes dentro do intervalo definido pelos pais,
-            % mas também pode limitar a diversidade se os pais forem muito semelhantes.
         end
 
         % Crossover Uniforme
@@ -714,34 +597,7 @@ classdef GAPI_2
             % maior pode resultar em mudanças mais significativas nos valores dos genes.
         end
 
-        % Mutação por Inversão
-        function mutatedIndividual = inversionMutate(obj, individual)
-            % Objetivo: Aplicar a mutação por inversão em um indivíduo.
-            % individual: Um indivíduo (solução) que será potencialmente mutado.
-            % mutationRate: Probabilidade de mutação de cada gene
-
-            % Número de genes (parâmetros)
-            numGenes = length(individual);
-
-            % Copiar o indivíduo para a mutação
-            mutatedIndividual = individual;
-
-            % Verificar se a mutação ocorrerá
-            if rand <= obj.mutationRate
-                % Escolhendo dois pontos aleatórios para a inversão
-                % Dois pontos são selecionados aleatoriamente dentro do cromossomo. Estes pontos definem o segmento que será invertido.
-                points = randperm(numGenes, 2);
-                lowerPoint = min(points);
-                upperPoint = max(points);
-
-                % Invertendo o segmento entre os dois pontos
-                % Os genes entre os dois pontos são invertidos em ordem. Isso pode ser útil em problemas onde a ordem dos genes é importante.
-                mutatedIndividual(lowerPoint:upperPoint) = mutatedIndividual(upperPoint:-1:lowerPoint);
-            end
-        end
-
         %% Funções de Custo
-
         function [cost] = f_motor(obj, x)
             %% Parâmetros da Simulação
 
@@ -749,7 +605,7 @@ classdef GAPI_2
             Tsc = 1/f;                                     % Periodo de amostragem do sinal
             p = 10;                                        % Numero de partes que o intervalo discreto e dividido
             h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;                                    % Tempo de Simulação
+            Tsimu = 0.7;                                    % Tempo de Simulação
             Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
 
             %% Parâmetros do Motor
@@ -818,19 +674,19 @@ classdef GAPI_2
 
             Tn = P*Polos/(2*weles);
 
-            Tl =  Tn*0.75*10* ((t-0.7).*(t >= 0.7) - (t-0.8).*(t >= 0.8));
+            Tl =  Tn*0.75*100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
 
             %% Corrente Id de referência
 
             lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
 
-            Ids_ref = 5*lambda_nonminal*((t-0).*(t >= 0) - (t-0.2).*(t >= 0.2));
+            Ids_ref = 10*lambda_nonminal*((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
 
             %% Velocidade de Referência
 
             w_nom_ref = 2*pi*60;
 
-            w_ref = 2*w_nom_ref * ((t-0.2).*(t >= 0.2) - (t-0.7).*(t >= 0.7));
+            w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
 
             %% Loop Simulação Motor
             for k = 1:Np
@@ -933,92 +789,189 @@ classdef GAPI_2
                 Iqs_atrasado = Iqs_buffer(end);  % Valor com atraso de buffer_size amostras
                 Ids_atrasado = Ids_buffer(end);  % Valor com atraso de buffer_size amostras
 
-                %% Penalização para zeros nos ganhos
-                cost_KP_w = KP_w/10000;
-                cost_KI_w = KI_w/1000;
-                cost_KP_id = KP_id/1000;
-                cost_KI_id = KI_id/1000;
-                cost_KP_iq = KP_iq/1000;
-                cost_KI_iq = KI_iq/1000;
-                custo_ganhos = cost_KP_w + cost_KI_w + cost_KP_id + cost_KI_id + cost_KP_iq + cost_KI_iq;
-
                 % Aplicando os pesos no cálculo do erro
                 custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
 
-                cost = 2*custo_erros + custo_ganhos;
-
             end
+
+            %% Penalização para zeros nos ganhos
+            cost_KP_w = KP_w/10000;
+            cost_KI_w = KI_w/1000;
+            cost_KP_id = KP_id/1000;
+            cost_KI_id = KI_id/1000;
+            cost_KP_iq = KP_iq/1000;
+            cost_KI_iq = KI_iq/1000;
+            custo_ganhos = cost_KP_w + cost_KI_w + cost_KP_id + cost_KI_id + cost_KP_iq + cost_KI_iq;
+
+            % Custo total
+            cost = 2*custo_erros + custo_ganhos;
+
         end
 
         %% Plotagens
         % Plota Motor
         function obj = plotMotor(obj)
-            %% Simulação do Motor com os parâmetros obtidos
+            %% Parâmetros da Simulação
 
-            % Parâmetros de Simulação
             f = 10000;                                     % Frequencia de amostragem do sinal
             Tsc = 1/f;                                     % Periodo de amostragem do sinal
             p = 10;                                        % Numero de partes que o intervalo discreto e dividido
             h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;
-            Np = Tsimu/Tsc;
+            Tsimu = 1;                                    % Tempo de Simulação
+            Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
 
-            % Parâmetros do motor
+            %% Parâmetros do Motor
+
             Polos = 8;                                   % Numero de polos
-            frequencia = 60;                             % Frequência elétrica nominal
-            Rs = obj.bestSolution(1);                        % Resistência Estatórica
-            Lls = obj.bestSolution(4);
-            Lm = obj.bestSolution(3);
-            Llr = obj.bestSolution(4);
-            Rr = obj.bestSolution(2);
+            frequencia = 60;                             % Frequência elétrica nominal rotor/rotor
+            Lr = obj.Lm + obj.Lls;                               % Indutância dos enrolamentos do rotor                               % Resistencia do rotor
             J =  0.1633;                                 % Inércia do motor
             K = 0.12;                                    % Coeficiente de atrito do eixo do motor
             weles = 2*pi*frequencia;                     % Velocidade sincrona em radianos elétricos por segundo
-            w = weles;                                   % Velocidade do sistema síncrono
-            Tl = 0;                                      % Torque de carga
-            wr = 0;
+            wr = 0;                                      % Velocidade inicial
+            P = 4*736;                                   % Potência do motor
 
-            Vq = 150;
-            Vd = 5.7;
+            %% Reatâncias para espaço de estados
 
-            % Reatâncias para espaço de estados
-
-            Xm = weles*Lm;                     % Reatância de magnetização
-            Xls = weles*Lls;                   % Reatância de dispersão do estator
-            Xlr = weles*Llr;                   % Reatância de dispersão do rotor
+            Xm = weles*obj.Lm;                               % Reatância de magnetização
+            Xls = weles*obj.Lls;                             % Reatância de dispersão do estator
+            Xlr = weles*obj.Lls;                             % Reatância de dispersão do rotor
             Xml = 1/(1/Xm + 1/Xls + 1/Xlr);
 
-            % Constantes para solução mecânica do motor
+            %% Constantes para solução mecânica do motor
 
             A =  - K/J;
             B1 =   Polos/(2*J);
             B2 = - Polos/(2*J);
 
-            % Inicialização das variaveis
+            %% Ganhos Controladores
+            KP_w = obj.bestSolution(1);
+            KI_w = obj.bestSolution(2);
+
+            KP_id = obj.bestSolution(3);
+            KI_id = obj.bestSolution(4);
+
+            KP_iq = obj.bestSolution(5);
+            KI_iq = obj.bestSolution(6);
+
+            %% Inicialização das variaveis
+
             Fqs = 0;
             Fds = 0;
             Fqr = 0;
             Fdr = 0;
+            Ids = 0;
+            Ids_ant = 0;
+            Iqs = 0;
+            lambda_dr_est = 0;
+            theta = 0;
+            UI_w = 0;
+            UI_id = 0;
+            UI_iq = 0;
+            obj.iqs_vetor = zeros(1,Np);
+            obj.ids_vetor = zeros(1,Np);
+            Te_vetor = zeros(1,Np);
+            t = 0:Tsc:Np*Tsc-Tsc;
 
-            % Inicialização de vetores
-            obj.wrpm_vetor = zeros(1, Np);
-            obj.iqs_vetor = zeros(1, Np);
-            obj.ids_vetor = zeros(1, Np);
-            obj.t_vetor = linspace(0, Tsimu, Np); % Cria um vetor de tempo linearmente espaçado
+            %% Torque de Carga
 
-            % Loop Simulação Motor
+            Tn = P*Polos/(2*weles);
+
+            Tl =  Tn*0.75 *100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
+
+            %% Corrente Id de referência
+
+            lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
+
+            Ids_ref = 10*lambda_nonminal * ((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
+
+            %% Velocidade de Referência
+
+            w_nom_ref = 2*pi*60;
+
+            w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
+
+            %% Loop Simulação Motor
             for k = 1:Np
+                %% Estimador de fluxo rotórico e orientação do sist. de referência
+
+                lambda_dr_est = lambda_dr_est*((2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr)) + Ids*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc)) + Ids_ant*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc));
+                Ids_ant = Ids;
+
+                if(lambda_dr_est > 0.1)
+                    wsl = (obj.Lm*obj.Rr*Iqs)/(Lr*lambda_dr_est);
+                else
+                    wsl = 0;
+                end
+
+                wr_est = wr + wsl;
+                w = wr_est;
+                theta = theta + Tsc*w;
+
+                %Velocidade
+                e_w = w_ref(k) - wr;
+                UI_w = UI_w + e_w*Tsc;
+                U_w = KP_w*e_w + KI_w*UI_w;
+                iqs_ref = U_w;
+
+                %Servos de corrente
+                e_id = Ids_ref(k) - Ids;
+                UI_id = UI_id + e_id*Tsc;
+                U_Id = KP_id*e_id + KI_id*UI_id;
+
+                if(U_Id >= 127*sqrt(2))
+                    U_Id = 127*sqrt(2);
+                end
+                if(U_Id <= -127*sqrt(2))
+                    U_Id = -127*sqrt(2);
+                end
+
+                e_iq = iqs_ref - Iqs;
+                UI_iq = UI_iq*e_iq*Tsc;
+                U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
+
+                if(U_Iq >= 127*sqrt(2))
+                    U_Iq = 127*sqrt(2);
+                end
+                if(U_Iq <= -127*sqrt(2))
+                    U_Iq = -127*sqrt(2);
+                end
+
+                %% Solucionando a EDO eletrica (euler)
+                Vq = U_Iq;
+                Vd = U_Id;
+
+                %% Calculando as Tensões Va Vb e Vc
+
+                Valfa = Vq*cos(theta) + Vd*sin(theta);
+                Vbeta = -Vq*sin(theta) + Vd*cos(theta);
+
+                %Transf. inversa clarke
+                Va = Valfa;
+                Vb = -0.5*Valfa - sqrt(3)/2*Vbeta;
+                Vc = -0.5*Valfa + sqrt(3)/2*Vbeta;
+
+                Vmax = 127*sqrt(2);
+
+                if abs(Va) > Vmax || abs(Vb) > Vmax || abs(Vc) > Vmax
+                    % Calcule o fator de redução baseado na maior tensão
+                    scalingFactor = Vmax / max(abs([Va, Vb, Vc]));
+
+                    Vd = Vd * scalingFactor;
+                    Vq = Vq * scalingFactor;
+                end
+
 
                 for ksuper=1:p
 
                     Fqm = Xml/Xls*Fqs + Xml/Xlr*Fqr;
                     Fdm = Xml/Xls*Fds + Xml/Xlr*Fdr;
 
-                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - Rs/Xls*(Fqs-Fqm));
-                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - Rs/Xls*(Fds-Fdm));
+                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - obj.Rs/Xls*(Fqs-Fqm));
+                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - obj.Rs/Xls*(Fds-Fdm));
 
-                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + Rr/Xlr*(Fqr-Fqm));
-                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + Rr/Xlr*(Fdr-Fdm));
+                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + obj.Rr/Xlr*(Fqr-Fqm));
+                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + obj.Rr/Xlr*(Fdr-Fdm));
 
                     Iqs = (Fqs-Fqm)/Xls;
                     Ids = (Fds-Fdm)/Xls;
@@ -1027,41 +980,36 @@ classdef GAPI_2
 
                     % Solução mecânica
 
-                    wr = wr + h*(A*wr + B1*Te + B2*Tl);
+                    wr = wr + h*(A*wr + B1*Te + B2*Tl(k));
                     wrpm = wr*2/Polos*60/(2*pi);
 
                 end
 
-                obj.wrpm_vetor(k) = wrpm;
                 obj.iqs_vetor(k) = Iqs;
                 obj.ids_vetor(k) = Ids;
-                obj.t_vetor(k) = Tsc*(k-1);
+                Te_vetor(k) = Te;
+                obj.wrpm_vetor(k) = wrpm;
             end
+            %% graficos
+            figure
+            % Plotando os dados
+            plot(t,obj.wrpm_vetor, t, w_ref*2.4539); % tom de cinza escuro
+            legend('Wr','Ref')
 
+            figure
+            % Plotando os dados
+            plot(t,obj.ids_vetor); % tom de cinza escuro
+            legend('Ids')
 
-            figure; % Cria uma nova janela de figura
-            plot(obj.t_vetor, obj.wrpm_vetor,obj.t_vetor, obj.real_wr_vetor, 'LineWidth', 2); % Plota wrpm_vetor
-            title('Velocidade (wrpm) x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Velocidade (wrpm)');
-            grid on; % Adiciona uma grade para melhor visualização
+            figure
+            % Plotando os dados
+            plot(t,obj.iqs_vetor, t ,iqs_ref); % tom de cinza escuro
+            legend('Iqs', 'Ref')
 
-            figure; % Cria outra nova janela de figura
-            plot(obj.t_vetor, obj.iqs_vetor,obj.t_vetor, obj.real_iqs_vetor, 'LineWidth', 2); % Plota iqs_vetor
-            title('Corrente iqs x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente iqs (A)');
-            grid on;
-
-            figure; % Cria mais uma nova janela de figura
-            plot(obj.t_vetor, obj.ids_vetor,obj.t_vetor, obj.real_ids_vetor, 'LineWidth', 2); % Plota ids_vetor
-            title('Corrente ids x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente ids (A)');
-            grid on;
+            figure
+            % Plotando os dados
+            plot(t,Te_vetor,t, Tl); % tom de cinza escuro
+            legend('Te', 'TL')
         end
 
         function obj = plotMotorComplement(obj)

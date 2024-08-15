@@ -9,7 +9,7 @@ f = 10000;                                     % Frequencia de amostragem do sin
 Tsc = 1/f;                                     % Periodo de amostragem do sinal
 p = 10;                                        % Numero de partes que o intervalo discreto e dividido
 h = Tsc/p;                                     % Passo de amostragem continuo
-Tsimu = 2;                                    % Tempo de Simulação
+Tsimu = 1;                                    % Tempo de Simulação
 Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
 
 %% Parâmetros do Motor
@@ -44,14 +44,17 @@ B1 =   Polos/(2*J);
 B2 = - Polos/(2*J);
 
 %% Ganhos Controladores
-
-KP_w = 585.7158     ;
+% 1696.8194              0      1.3668319      259.29596       13.96912              0
+% Geração: 100 Melhor Valor: 1.3562 Melhor Individuo: 1140.7216              0      2.7360757      285.60373     0.40253971              0
+% Geração: 100 Melhor Valor: 7.8133 Melhor Individuo: 8364.777      31.419262       9.022495      289.80748      85.198494       87.75967
+% Geração: 100 Melhor Valor: 22.1557 Melhor Individuo: 1043.4093       1.312594      71.357879      1052.7372       49.78579      80.287684
+KP_w = 3455.1046      ;
 KI_w =    0  ;
 
-KP_id = 2.878055;
-KI_id =  326.8236;
+KP_id = 0;
+KI_id =    148.53181;
 
-KP_iq =  0.6610145  ;
+KP_iq =  6.985483    ;
 KI_iq = 0;
 
 %% Inicialização das variaveis
@@ -104,19 +107,19 @@ e_id_vetor = zeros(1,Np);
 
 Tn = P*Polos/(2*weles);
 
-Tl =  Tn*0.75 *10* ((t-1.2).*(t >= 1.2) - (t-1.3).*(t >= 1.3));
+Tl =  Tn*0.75 *100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
 
 %% Corrente Id de referência
 
 lambda_nonminal = 127/(2*pi*frequencia)/(Lm);
 
-Ids_ref = 5*lambda_nonminal * ((t-0).*(t >= 0) - (t-0.2).*(t >= 0.2));
+Ids_ref = 10*lambda_nonminal * ((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
 
 %% Velocidade de Referência
 
 w_nom_ref = 2*pi*60;
 
-w_ref = w_nom_ref * ((t-0.2).*(t >= 0.2) - (t-1.2).*(t >= 1.2));
+w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
 
 %% Loop Simulação Motor
 for k = 1:Np
@@ -238,7 +241,7 @@ for k = 1:Np
     e_id_vetor(k) = e_id;
 
 end
-
+%% graficos
 figure
 % Plotando os dados
 plot(t,wr_vetor,t,w_ref); % tom de cinza escuro
