@@ -48,13 +48,13 @@ B2 = - Polos/(2*J);
 % Geração: 100 Melhor Valor: 1.3562 Melhor Individuo: 1140.7216              0      2.7360757      285.60373     0.40253971              0
 % Geração: 100 Melhor Valor: 7.8133 Melhor Individuo: 8364.777      31.419262       9.022495      289.80748      85.198494       87.75967
 % Geração: 100 Melhor Valor: 22.1557 Melhor Individuo: 1043.4093       1.312594      71.357879      1052.7372       49.78579      80.287684
-KP_w = 3455.1046      ;
+KP_w = 347.0288     ;
 KI_w =    0  ;
 
-KP_id = 0;
-KI_id =    148.53181;
+KP_id = 86.85888 ;
+KI_id =    0;
 
-KP_iq =  6.985483    ;
+KP_iq = 12.4916   ;
 KI_iq = 0;
 
 %% Inicialização das variaveis

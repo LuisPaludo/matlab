@@ -662,6 +662,7 @@ classdef GAPI_2
             %% buffer de atraso
             % Inicializando buffers para armazenar os valores anteriores
             buffer_size = obj.buffer;  % Tamanho do atraso (número de amostras)
+            buffer_index = 1;
             Iqs_buffer = zeros(1, buffer_size);
             Ids_buffer = zeros(1, buffer_size);
 
@@ -731,19 +732,15 @@ classdef GAPI_2
                 UI_iq = UI_iq*e_iq*Tsc;
                 U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
 
-                if(U_Iq >= 127*sqrt(2))
-                    U_Iq = 127*sqrt(2);
-                end
-                if(U_Iq <= -127*sqrt(2))
-                    U_Iq = -127*sqrt(2);
-                end
-
                 %% Solucionando a EDO eletrica (euler)
+                limit = 127 * sqrt(2);
+                
+                U_Iq = min(max(U_Iq, -limit), limit);
+                U_Id = min(max(U_Id, -limit), limit);
                 Vq = U_Iq;
                 Vd = U_Id;
 
                 for ksuper=1:p
-
                     Fqm = c1*Fqs + c2*Fqr;
                     Fdm = c1*Fds + c2*Fdr;
 
@@ -759,21 +756,24 @@ classdef GAPI_2
                     Te = cTe*(Fds*Iqs - Fqs*Ids);
 
                     % Solução mecânica
+
                     wr = wr + cA*wr + cB1*Te + cTl(k);
 
                 end
 
                 % Desloca o buffer para a direita (atualiza o atraso)
-                Iqs_buffer = [Iqs, Iqs_buffer(1:end-1)];
-                Ids_buffer = [Ids, Ids_buffer(1:end-1)];
+                Iqs_buffer(buffer_index) = Iqs;
+                Ids_buffer(buffer_index) = Ids;
 
-                % Extrai os valores atrasados do buffer
-                Iqs_atrasado = Iqs_buffer(end);  % Valor com atraso de buffer_size amostras
-                Ids_atrasado = Ids_buffer(end);  % Valor com atraso de buffer_size amostras
+                % Extrai os valores atrasados do buffer usando o índice circular
+                Iqs_atrasado = Iqs_buffer(mod(buffer_index - 1, buffer_size) + 1);
+                Ids_atrasado = Ids_buffer(mod(buffer_index - 1, buffer_size) + 1);
+
+                % Atualiza o índice circular
+                buffer_index = mod(buffer_index, buffer_size) + 1;
 
                 % Aplicando os pesos no cálculo do erro
                 custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
-
             end
 
             %% Penalização para zeros nos ganhos
@@ -861,6 +861,7 @@ classdef GAPI_2
             %% buffer de atraso
             % Inicializando buffers para armazenar os valores anteriores
             buffer_size = obj.buffer;  % Tamanho do atraso (número de amostras)
+            buffer_index = 1;
             Iqs_buffer = zeros(1, buffer_size);
             Ids_buffer = zeros(1, buffer_size);
 
@@ -891,7 +892,7 @@ classdef GAPI_2
             c1 = Xml/Xls;
             c2 = Xml/Xlr;
             c3 = (2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr);
-            c4 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Ts);
+            c4 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc);
             c5 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc);
             c6 = h*weles;
             c7 = c6*obj.Rs/Xls;
@@ -926,51 +927,19 @@ classdef GAPI_2
                 UI_id = UI_id + e_id*Tsc;
                 U_Id = KP_id*e_id + KI_id*UI_id;
 
-                if(U_Id >= 127*sqrt(2))
-                    U_Id = 127*sqrt(2);
-                end
-                if(U_Id <= -127*sqrt(2))
-                    U_Id = -127*sqrt(2);
-                end
-
                 e_iq = iqs_ref - Iqs_atrasado;
                 UI_iq = UI_iq*e_iq*Tsc;
                 U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
 
-                if(U_Iq >= 127*sqrt(2))
-                    U_Iq = 127*sqrt(2);
-                end
-                if(U_Iq <= -127*sqrt(2))
-                    U_Iq = -127*sqrt(2);
-                end
-
                 %% Solucionando a EDO eletrica (euler)
+                limit = 127 * sqrt(2);
+                
+                U_Iq = min(max(U_Iq, -limit), limit);
+                U_Id = min(max(U_Id, -limit), limit);
                 Vq = U_Iq;
                 Vd = U_Id;
 
-                %% Calculando as Tensões Va Vb e Vc
-
-                Valfa = Vq*cos(theta) + Vd*sin(theta);
-                Vbeta = -Vq*sin(theta) + Vd*cos(theta);
-
-                %Transf. inversa clarke
-                Va = Valfa;
-                Vb = -0.5*Valfa - sqrt(3)/2*Vbeta;
-                Vc = -0.5*Valfa + sqrt(3)/2*Vbeta;
-
-                Vmax = 127*sqrt(2);
-
-                if abs(Va) > Vmax || abs(Vb) > Vmax || abs(Vc) > Vmax
-                    % Calcule o fator de redução baseado na maior tensão
-                    scalingFactor = Vmax / max(abs([Va, Vb, Vc]));
-
-                    Vd = Vd * scalingFactor;
-                    Vq = Vq * scalingFactor;
-                end
-
-
                 for ksuper=1:p
-
                     Fqm = c1*Fqs + c2*Fqr;
                     Fdm = c1*Fds + c2*Fdr;
 
@@ -986,20 +955,21 @@ classdef GAPI_2
                     Te = cTe*(Fds*Iqs - Fqs*Ids);
 
                     % Solução mecânica
+
                     wr = wr + cA*wr + cB1*Te + cTl(k);
 
                 end
 
                 % Desloca o buffer para a direita (atualiza o atraso)
-                Iqs_buffer = [Iqs, Iqs_buffer(1:end-1)];
-                Ids_buffer = [Ids, Ids_buffer(1:end-1)];
+                Iqs_buffer(buffer_index) = Iqs;
+                Ids_buffer(buffer_index) = Ids;
 
-                % Extrai os valores atrasados do buffer
-                Iqs_atrasado = Iqs_buffer(end);  % Valor com atraso de buffer_size amostras
-                Ids_atrasado = Ids_buffer(end);  % Valor com atraso de buffer_size amostras
+                % Extrai os valores atrasados do buffer usando o índice circular
+                Iqs_atrasado = Iqs_buffer(mod(buffer_index - 1, buffer_size) + 1);
+                Ids_atrasado = Ids_buffer(mod(buffer_index - 1, buffer_size) + 1);
 
-                % Aplicando os pesos no cálculo do erro
-                custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
+                % Atualiza o índice circular
+                buffer_index = mod(buffer_index, buffer_size) + 1;
 
                 obj.iqs_vetor(k) = Iqs;
                 obj.ids_vetor(k) = Ids;
