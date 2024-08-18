@@ -20,9 +20,10 @@ classdef GAPI_2
         parent1
         parent2
         bestSolution
-        wrpm_vetor
+        wr_vetor
         iqs_vetor
         ids_vetor
+        te_vetor
         t_vetor
         executionTime
         Rs
@@ -97,12 +98,6 @@ classdef GAPI_2
             end
             if strcmp(selection, 'Estoc')
                 estocSize  = selectionArgs{2};
-            end
-            if strcmp(selection, 'Boltzmann')
-                % disp('Digite a temperatura Inicial')
-                tempInicial = selectionArgs{2}(1);
-                % disp('Digite a temperatura Final')
-                tempFinal = selectionArgs{2}(2);
             end
             if strcmp(selection, '')
                 disp('Digite o tipo de seleção')
@@ -688,15 +683,230 @@ classdef GAPI_2
 
             w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
 
+            %% Constantes
+            cTl = h*B2*Tl;
+            cA = h*A;
+            cB1 = h*B1;
+            cXls = 1/Xls;
+            cTe = 3/2*Polos/2*1/weles;
+            c1 = Xml/Xls;
+            c2 = Xml/Xlr;
+            c3 = (2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr);
+            c4 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc);
+            c5 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc);
+            c6 = h*weles;
+            c7 = c6*obj.Rs/Xls;
+            c8 = c6*obj.Rr/Xlr;
+            c9 = obj.Lm*obj.Rr/Lr;
+
             %% Loop Simulação Motor
             for k = 1:Np
                 % Estimador de fluxo rotórico e orientação do sist. de referência
 
-                lambda_dr_est = lambda_dr_est*((2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr)) + Ids_atrasado*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc)) + Ids_ant*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc));
+                lambda_dr_est = lambda_dr_est*c3 + Ids_atrasado*c4 + Ids_ant*c5;
                 Ids_ant = Ids_atrasado;
 
                 if(lambda_dr_est > 0.1)
-                    wsl = (obj.Lm*obj.Rr*Iqs_atrasado)/(Lr*lambda_dr_est);
+                    wsl = c9*Iqs_atrasado/lambda_dr_est;
+                else
+                    wsl = 0;
+                end
+
+                wr_est = wr + wsl;
+                w = wr_est;
+                theta = theta + Tsc*w;
+
+                %Velocidade
+                e_w = w_ref(k) - wr;
+                UI_w = UI_w + e_w*Tsc;
+                U_w = KP_w*e_w + KI_w*UI_w;
+                iqs_ref = U_w;
+
+                %Servos de corrente
+                e_id = Ids_ref(k) - Ids_atrasado;
+                UI_id = UI_id + e_id*Tsc;
+                U_Id = KP_id*e_id + KI_id*UI_id;
+
+                e_iq = iqs_ref - Iqs_atrasado;
+                UI_iq = UI_iq*e_iq*Tsc;
+                U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
+
+                if(U_Iq >= 127*sqrt(2))
+                    U_Iq = 127*sqrt(2);
+                end
+                if(U_Iq <= -127*sqrt(2))
+                    U_Iq = -127*sqrt(2);
+                end
+
+                %% Solucionando a EDO eletrica (euler)
+                Vq = U_Iq;
+                Vd = U_Id;
+
+                for ksuper=1:p
+
+                    Fqm = c1*Fqs + c2*Fqr;
+                    Fdm = c1*Fds + c2*Fdr;
+
+                    Fqs = Fqs + c6*Vq - h*w*Fds - c7*(Fqs-Fqm);
+                    Fds = Fds + c6*Vd + h*w*Fqs - c7*(Fds-Fdm);
+
+                    Fqr = Fqr - h*(w-wr)*Fdr + c8*(Fqm-Fqr);
+                    Fdr = Fdr - h*(wr-w)*Fqr + c8*(Fdm-Fdr);
+
+                    Iqs = (Fqs-Fqm)*cXls;
+                    Ids = (Fds-Fdm)*cXls;
+
+                    Te = cTe*(Fds*Iqs - Fqs*Ids);
+
+                    % Solução mecânica
+                    wr = wr + cA*wr + cB1*Te + cTl(k);
+
+                end
+
+                % Desloca o buffer para a direita (atualiza o atraso)
+                Iqs_buffer = [Iqs, Iqs_buffer(1:end-1)];
+                Ids_buffer = [Ids, Ids_buffer(1:end-1)];
+
+                % Extrai os valores atrasados do buffer
+                Iqs_atrasado = Iqs_buffer(end);  % Valor com atraso de buffer_size amostras
+                Ids_atrasado = Ids_buffer(end);  % Valor com atraso de buffer_size amostras
+
+                % Aplicando os pesos no cálculo do erro
+                custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
+
+            end
+
+            %% Penalização para zeros nos ganhos
+            cost_KP_w = KP_w/10000;
+            cost_KI_w = KI_w/1000;
+            cost_KP_id = KP_id/1000;
+            cost_KI_id = KI_id/1000;
+            cost_KP_iq = KP_iq/1000;
+            cost_KI_iq = KI_iq/1000;
+            custo_ganhos = cost_KP_w + cost_KI_w + cost_KP_id + cost_KI_id + cost_KP_iq + cost_KI_iq;
+
+            % Custo total
+            cost = 2*custo_erros + custo_ganhos;
+
+        end
+
+        %% Plotagens
+        % Plota Motor
+        function obj = plotMotor(obj)
+            %% Parâmetros da Simulação
+
+            f = 10000;                                     % Frequencia de amostragem do sinal
+            Tsc = 1/f;                                     % Periodo de amostragem do sinal
+            p = 10;                                        % Numero de partes que o intervalo discreto e dividido
+            h = Tsc/p;                                     % Passo de amostragem continuo
+            Tsimu = 1;                                    % Tempo de Simulação
+            Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
+
+            %% Parâmetros do Motor
+
+            Polos = 8;                                   % Numero de polos
+            frequencia = 60;                             % Frequência elétrica nominal
+
+            Lr = obj.Lm + obj.Lls;                               % Indutância dos enrolamentos do rotor
+
+            J =  0.1633;                                 % Inércia do motor
+            K = 0.12;                                    % Coeficiente de atrito do eixo do motor
+            weles = 2*pi*frequencia;                     % Velocidade sincrona em radianos elétricos por segundo
+            wr = 0;                                      % Velocidade inicial
+            P = 4*736;                                   % Potência do motor
+
+            %% Reatâncias para espaço de estados
+
+            Xm = weles*obj.Lm;                               % Reatância de magnetização
+            Xls = weles*obj.Lls;                             % Reatância de dispersão do estator
+            Xlr = weles*obj.Lls;                             % Reatância de dispersão do rotor
+            Xml = 1/(1/Xm + 1/Xls + 1/Xlr);
+
+            %% Constantes para solução mecânica do motor
+
+            A =  - K/J;
+            B1 =   Polos/(2*J);
+            B2 = - Polos/(2*J);
+
+            %% Ganhos Controladores
+
+            KP_w = obj.bestSolution(1);
+            KI_w = obj.bestSolution(2);
+
+            KP_id = obj.bestSolution(3);
+            KI_id = obj.bestSolution(4);
+
+            KP_iq = obj.bestSolution(5);
+            KI_iq = obj.bestSolution(6);
+
+            %% Inicialização das variaveis
+
+            Fqs = 0;
+            Fds = 0;
+            Fqr = 0;
+            Fdr = 0;
+            Ids = 0;
+            Ids_ant = 0;
+            Iqs = 0;
+            lambda_dr_est = 0;
+            theta = 0;
+            UI_w = 0;
+            UI_id = 0;
+            UI_iq = 0;
+            t = 0:Tsc:Np*Tsc-Tsc;
+            custo_erros = 0;
+            Iqs_atrasado = 0;
+            Ids_atrasado = 0;
+
+            %% buffer de atraso
+            % Inicializando buffers para armazenar os valores anteriores
+            buffer_size = obj.buffer;  % Tamanho do atraso (número de amostras)
+            Iqs_buffer = zeros(1, buffer_size);
+            Ids_buffer = zeros(1, buffer_size);
+
+            %% Torque de Carga
+
+            Tn = P*Polos/(2*weles);
+
+            Tl =  Tn*0.75*100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
+
+            %% Corrente Id de referência
+
+            lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
+
+            Ids_ref = 10*lambda_nonminal*((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
+
+            %% Velocidade de Referência
+
+            w_nom_ref = 2*pi*60;
+
+            w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
+
+            %% Constantes
+            cTl = h*B2*Tl;
+            cA = h*A;
+            cB1 = h*B1;
+            cXls = 1/Xls;
+            cTe = 3/2*Polos/2*1/weles;
+            c1 = Xml/Xls;
+            c2 = Xml/Xlr;
+            c3 = (2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr);
+            c4 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Ts);
+            c5 = (obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc);
+            c6 = h*weles;
+            c7 = c6*obj.Rs/Xls;
+            c8 = c6*obj.Rr/Xlr;
+            c9 = obj.Lm*obj.Rr/Lr;
+
+            %% Loop Simulação Motor
+            for k = 1:Np
+                % Estimador de fluxo rotórico e orientação do sist. de referência
+
+                lambda_dr_est = lambda_dr_est*c3 + Ids_atrasado*c4 + Ids_ant*c5;
+                Ids_ant = Ids_atrasado;
+
+                if(lambda_dr_est > 0.1)
+                    wsl = c9*Iqs_atrasado/lambda_dr_est;
                 else
                     wsl = 0;
                 end
@@ -761,23 +971,22 @@ classdef GAPI_2
 
                 for ksuper=1:p
 
-                    Fqm = Xml/Xls*Fqs + Xml/Xlr*Fqr;
-                    Fdm = Xml/Xls*Fds + Xml/Xlr*Fdr;
+                    Fqm = c1*Fqs + c2*Fqr;
+                    Fdm = c1*Fds + c2*Fdr;
 
-                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - obj.Rs/Xls*(Fqs-Fqm));
-                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - obj.Rs/Xls*(Fds-Fdm));
+                    Fqs = Fqs + c6*Vq - h*w*Fds - c7*(Fqs-Fqm);
+                    Fds = Fds + c6*Vd + h*w*Fqs - c7*(Fds-Fdm);
 
-                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + obj.Rr/Xlr*(Fqr-Fqm));
-                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + obj.Rr/Xlr*(Fdr-Fdm));
+                    Fqr = Fqr - h*(w-wr)*Fdr + c8*(Fqm-Fqr);
+                    Fdr = Fdr - h*(wr-w)*Fqr + c8*(Fdm-Fdr);
 
-                    Iqs = (Fqs-Fqm)/Xls;
-                    Ids = (Fds-Fdm)/Xls;
+                    Iqs = (Fqs-Fqm)*cXls;
+                    Ids = (Fds-Fdm)*cXls;
 
-                    Te = 3/2*Polos/2*1/weles*(Fds*Iqs - Fqs*Ids);
+                    Te = cTe*(Fds*Iqs - Fqs*Ids);
 
                     % Solução mecânica
-
-                    wr = wr + h*(A*wr + B1*Te + B2*Tl(k));
+                    wr = wr + cA*wr + cB1*Te + cTl(k);
 
                 end
 
@@ -792,208 +1001,15 @@ classdef GAPI_2
                 % Aplicando os pesos no cálculo do erro
                 custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
 
-            end
-
-            %% Penalização para zeros nos ganhos
-            cost_KP_w = KP_w/10000;
-            cost_KI_w = KI_w/1000;
-            cost_KP_id = KP_id/1000;
-            cost_KI_id = KI_id/1000;
-            cost_KP_iq = KP_iq/1000;
-            cost_KI_iq = KI_iq/1000;
-            custo_ganhos = cost_KP_w + cost_KI_w + cost_KP_id + cost_KI_id + cost_KP_iq + cost_KI_iq;
-
-            % Custo total
-            cost = 2*custo_erros + custo_ganhos;
-
-        end
-
-        %% Plotagens
-        % Plota Motor
-        function obj = plotMotor(obj)
-            %% Parâmetros da Simulação
-
-            f = 10000;                                     % Frequencia de amostragem do sinal
-            Tsc = 1/f;                                     % Periodo de amostragem do sinal
-            p = 10;                                        % Numero de partes que o intervalo discreto e dividido
-            h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;                                    % Tempo de Simulação
-            Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
-
-            %% Parâmetros do Motor
-
-            Polos = 8;                                   % Numero de polos
-            frequencia = 60;                             % Frequência elétrica nominal rotor/rotor
-            Lr = obj.Lm + obj.Lls;                               % Indutância dos enrolamentos do rotor                               % Resistencia do rotor
-            J =  0.1633;                                 % Inércia do motor
-            K = 0.12;                                    % Coeficiente de atrito do eixo do motor
-            weles = 2*pi*frequencia;                     % Velocidade sincrona em radianos elétricos por segundo
-            wr = 0;                                      % Velocidade inicial
-            P = 4*736;                                   % Potência do motor
-
-            %% Reatâncias para espaço de estados
-
-            Xm = weles*obj.Lm;                               % Reatância de magnetização
-            Xls = weles*obj.Lls;                             % Reatância de dispersão do estator
-            Xlr = weles*obj.Lls;                             % Reatância de dispersão do rotor
-            Xml = 1/(1/Xm + 1/Xls + 1/Xlr);
-
-            %% Constantes para solução mecânica do motor
-
-            A =  - K/J;
-            B1 =   Polos/(2*J);
-            B2 = - Polos/(2*J);
-
-            %% Ganhos Controladores
-            KP_w = obj.bestSolution(1);
-            KI_w = obj.bestSolution(2);
-
-            KP_id = obj.bestSolution(3);
-            KI_id = obj.bestSolution(4);
-
-            KP_iq = obj.bestSolution(5);
-            KI_iq = obj.bestSolution(6);
-
-            %% Inicialização das variaveis
-
-            Fqs = 0;
-            Fds = 0;
-            Fqr = 0;
-            Fdr = 0;
-            Ids = 0;
-            Ids_ant = 0;
-            Iqs = 0;
-            lambda_dr_est = 0;
-            theta = 0;
-            UI_w = 0;
-            UI_id = 0;
-            UI_iq = 0;
-            obj.iqs_vetor = zeros(1,Np);
-            obj.ids_vetor = zeros(1,Np);
-            Te_vetor = zeros(1,Np);
-            t = 0:Tsc:Np*Tsc-Tsc;
-
-            %% Torque de Carga
-
-            Tn = P*Polos/(2*weles);
-
-            Tl =  Tn*0.75 *100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
-
-            %% Corrente Id de referência
-
-            lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
-
-            Ids_ref = 10*lambda_nonminal * ((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
-
-            %% Velocidade de Referência
-
-            w_nom_ref = 2*pi*60;
-
-            w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
-
-            %% Loop Simulação Motor
-            for k = 1:Np
-                %% Estimador de fluxo rotórico e orientação do sist. de referência
-
-                lambda_dr_est = lambda_dr_est*((2*Lr-Tsc*obj.Rr)/(2*Lr+Tsc*obj.Rr)) + Ids*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc)) + Ids_ant*((obj.Lm*obj.Rr*Tsc)/(2*Lr+obj.Rr*Tsc));
-                Ids_ant = Ids;
-
-                if(lambda_dr_est > 0.1)
-                    wsl = (obj.Lm*obj.Rr*Iqs)/(Lr*lambda_dr_est);
-                else
-                    wsl = 0;
-                end
-
-                wr_est = wr + wsl;
-                w = wr_est;
-                theta = theta + Tsc*w;
-
-                %Velocidade
-                e_w = w_ref(k) - wr;
-                UI_w = UI_w + e_w*Tsc;
-                U_w = KP_w*e_w + KI_w*UI_w;
-                iqs_ref = U_w;
-
-                %Servos de corrente
-                e_id = Ids_ref(k) - Ids;
-                UI_id = UI_id + e_id*Tsc;
-                U_Id = KP_id*e_id + KI_id*UI_id;
-
-                if(U_Id >= 127*sqrt(2))
-                    U_Id = 127*sqrt(2);
-                end
-                if(U_Id <= -127*sqrt(2))
-                    U_Id = -127*sqrt(2);
-                end
-
-                e_iq = iqs_ref - Iqs;
-                UI_iq = UI_iq*e_iq*Tsc;
-                U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
-
-                if(U_Iq >= 127*sqrt(2))
-                    U_Iq = 127*sqrt(2);
-                end
-                if(U_Iq <= -127*sqrt(2))
-                    U_Iq = -127*sqrt(2);
-                end
-
-                %% Solucionando a EDO eletrica (euler)
-                Vq = U_Iq;
-                Vd = U_Id;
-
-                %% Calculando as Tensões Va Vb e Vc
-
-                Valfa = Vq*cos(theta) + Vd*sin(theta);
-                Vbeta = -Vq*sin(theta) + Vd*cos(theta);
-
-                %Transf. inversa clarke
-                Va = Valfa;
-                Vb = -0.5*Valfa - sqrt(3)/2*Vbeta;
-                Vc = -0.5*Valfa + sqrt(3)/2*Vbeta;
-
-                Vmax = 127*sqrt(2);
-
-                if abs(Va) > Vmax || abs(Vb) > Vmax || abs(Vc) > Vmax
-                    % Calcule o fator de redução baseado na maior tensão
-                    scalingFactor = Vmax / max(abs([Va, Vb, Vc]));
-
-                    Vd = Vd * scalingFactor;
-                    Vq = Vq * scalingFactor;
-                end
-
-
-                for ksuper=1:p
-
-                    Fqm = Xml/Xls*Fqs + Xml/Xlr*Fqr;
-                    Fdm = Xml/Xls*Fds + Xml/Xlr*Fdr;
-
-                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - obj.Rs/Xls*(Fqs-Fqm));
-                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - obj.Rs/Xls*(Fds-Fdm));
-
-                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + obj.Rr/Xlr*(Fqr-Fqm));
-                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + obj.Rr/Xlr*(Fdr-Fdm));
-
-                    Iqs = (Fqs-Fqm)/Xls;
-                    Ids = (Fds-Fdm)/Xls;
-
-                    Te = 3/2*Polos/2*1/weles*(Fds*Iqs - Fqs*Ids);
-
-                    % Solução mecânica
-
-                    wr = wr + h*(A*wr + B1*Te + B2*Tl(k));
-                    wrpm = wr*2/Polos*60/(2*pi);
-
-                end
-
                 obj.iqs_vetor(k) = Iqs;
                 obj.ids_vetor(k) = Ids;
-                Te_vetor(k) = Te;
-                obj.wrpm_vetor(k) = wrpm;
+                obj.te_vetor(k) = Te;
+                obj.wr_vetor(k) = wr;
             end
             %% graficos
             figure
             % Plotando os dados
-            plot(t,obj.wrpm_vetor, t, w_ref*2.4539); % tom de cinza escuro
+            plot(t,obj.wr_vetor, t, w_ref); % tom de cinza escuro
             legend('Wr','Ref')
 
             figure
@@ -1008,246 +1024,8 @@ classdef GAPI_2
 
             figure
             % Plotando os dados
-            plot(t,Te_vetor,t, Tl); % tom de cinza escuro
+            plot(t,obj.te_vetor,t, Tl); % tom de cinza escuro
             legend('Te', 'TL')
-        end
-
-        function obj = plotMotorComplement(obj)
-            %% Simulação do Motor com os parâmetros obtidos
-
-            % Parâmetros de Simulação
-            f = 10000;                                     % Frequencia de amostragem do sinal
-            Tsc = 1/f;                                     % Periodo de amostragem do sinal
-            p = 10;                                        % Numero de partes que o intervalo discreto e dividido
-            h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;
-            Np = Tsimu/Tsc;
-
-            % Parâmetros do motor
-            Polos = 8;                                   % Numero de polos
-            frequencia = 60;                             % Frequência elétrica nominal
-            Rs = obj.Rs_solution;                        % Resistência Estatórica
-            Lls = obj.bestSolution(1);
-            Lm = obj.Lm_solution;
-            Llr = obj.bestSolution(1);
-            Rr = obj.Rr_solution;
-            J =  0.1633;                                 % Inércia do motor
-            K = 0.12;                                    % Coeficiente de atrito do eixo do motor
-            weles = 2*pi*frequencia;                     % Velocidade sincrona em radianos elétricos por segundo
-            w = weles;                                   % Velocidade do sistema síncrono
-            Tl = 0;                                      % Torque de carga
-            wr = 0;
-
-            Vq = 150;
-            Vd = 5.7;
-
-            % Reatâncias para espaço de estados
-
-            Xm = weles*Lm;                     % Reatância de magnetização
-            Xls = weles*Lls;                   % Reatância de dispersão do estator
-            Xlr = weles*Llr;                   % Reatância de dispersão do rotor
-            Xml = 1/(1/Xm + 1/Xls + 1/Xlr);
-
-            % Constantes para solução mecânica do motor
-
-            A =  - K/J;
-            B1 =   Polos/(2*J);
-            B2 = - Polos/(2*J);
-
-            % Inicialização das variaveis
-            Fqs = 0;
-            Fds = 0;
-            Fqr = 0;
-            Fdr = 0;
-
-            % Inicialização de vetores
-            obj.wrpm_vetor = zeros(1, Np);
-            obj.iqs_vetor = zeros(1, Np);
-            obj.ids_vetor = zeros(1, Np);
-            obj.t_vetor = linspace(0, Tsimu, Np); % Cria um vetor de tempo linearmente espaçado
-
-            % Loop Simulação Motor
-            for k = 1:Np
-
-                for ksuper=1:p
-
-                    Fqm = Xml/Xls*Fqs + Xml/Xlr*Fqr;
-                    Fdm = Xml/Xls*Fds + Xml/Xlr*Fdr;
-
-                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - Rs/Xls*(Fqs-Fqm));
-                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - Rs/Xls*(Fds-Fdm));
-
-                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + Rr/Xlr*(Fqr-Fqm));
-                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + Rr/Xlr*(Fdr-Fdm));
-
-                    Iqs = (Fqs-Fqm)/Xls;
-                    Ids = (Fds-Fdm)/Xls;
-
-                    Te = 3/2*Polos/2*1/weles*(Fds*Iqs - Fqs*Ids);
-
-                    % Solução mecânica
-
-                    wr = wr + h*(A*wr + B1*Te + B2*Tl);
-                    wrpm = wr*2/Polos*60/(2*pi);
-
-                end
-
-                obj.wrpm_vetor(k) = wrpm;
-                obj.iqs_vetor(k) = Iqs;
-                obj.ids_vetor(k) = Ids;
-                obj.t_vetor(k) = Tsc*(k-1);
-            end
-
-
-            figure; % Cria uma nova janela de figura
-            plot(obj.t_vetor, obj.wrpm_vetor,obj.t_vetor, obj.real_wr_vetor, 'LineWidth', 2); % Plota wrpm_vetor
-            title('Velocidade (wrpm) x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Velocidade (wrpm)');
-            grid on; % Adiciona uma grade para melhor visualização
-
-            figure; % Cria outra nova janela de figura
-            plot(obj.t_vetor, obj.iqs_vetor,obj.t_vetor, obj.real_iqs_vetor, 'LineWidth', 2); % Plota iqs_vetor
-            title('Corrente iqs x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente iqs (A)');
-            grid on;
-
-            figure; % Cria mais uma nova janela de figura
-            plot(obj.t_vetor, obj.ids_vetor,obj.t_vetor, obj.real_ids_vetor, 'LineWidth', 2); % Plota ids_vetor
-            title('Corrente ids x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente ids (A)');
-            grid on;
-        end
-
-        % Plota Motor
-        function obj = plotMotorSimplified(obj)
-            %% Simulação do Motor com os parâmetros obtidos
-
-            % Parâmetros de Simulação
-            f = 10000;                                     % Frequencia de amostragem do sinal
-            Tsc = 1/f;                                     % Periodo de amostragem do sinal
-            p = 10;                                        % Numero de partes que o intervalo discreto e dividido
-            h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;
-            Np = Tsimu/Tsc;
-
-            % Parâmetros do motor
-            Polos = 8;                                   % Numero de polos
-            frequencia = 60;                             % Frequência elétrica nominal
-            Rs = obj.bestSolution(1);                        % Resistência Estatórica
-            Lls = obj.bestSolution(4);
-            Lm = obj.bestSolution(3);
-            Llr = obj.bestSolution(4);
-            Rr = obj.bestSolution(2);
-            J =  0.1633;                                 % Inércia do motor
-            K = 0.12;                                    % Coeficiente de atrito do eixo do motor
-            weles = 2*pi*frequencia;                     % Velocidade sincrona em radianos elétricos por segundo
-            w = weles;                                   % Velocidade do sistema síncrono
-            Tl = 0;                                      % Torque de carga
-            wr = 2*pi*frequencia;
-
-            Vq = 150;
-            Vd = 5.7;
-
-            % Reatâncias para espaço de estados
-
-            Xm = weles*Lm;                     % Reatância de magnetização
-            Xls = weles*Lls;                   % Reatância de dispersão do estator
-            Xlr = weles*Llr;                   % Reatância de dispersão do rotor
-            Xml = 1/(1/Xm + 1/Xls + 1/Xlr);
-
-            % Constantes para solução mecânica do motor
-
-            A =  - K/J;
-            B1 =   Polos/(2*J);
-            B2 = - Polos/(2*J);
-
-            % Inicialização das variaveis
-            Fqs = 0;
-            Fds = 0;
-            Fqr = 0;
-            Fdr = 0;
-
-            % Inicialização de vetores
-            obj.wrpm_vetor = zeros(1, Np);
-            obj.iqs_vetor = zeros(1, Np);
-            obj.ids_vetor = zeros(1, Np);
-            obj.t_vetor = linspace(0, Tsimu, Np); % Cria um vetor de tempo linearmente espaçado
-
-            % Loop Simulação Motor
-            for k = 1:Np
-
-                for ksuper=1:p
-
-                    Fqm = Xml/Xls*Fqs + Xml/Xlr*Fqr;
-                    Fdm = Xml/Xls*Fds + Xml/Xlr*Fdr;
-
-                    Fqs = Fqs + h*weles*(Vq - w/weles*Fds - Rs/Xls*(Fqs-Fqm));
-                    Fds = Fds + h*weles*(Vd + w/weles*Fqs - Rs/Xls*(Fds-Fdm));
-
-                    Fqr = Fqr - h*weles*((w-wr)*Fdr/weles + Rr/Xlr*(Fqr-Fqm));
-                    Fdr = Fdr - h*weles*((wr-w)*Fqr/weles + Rr/Xlr*(Fdr-Fdm));
-
-                    Iqs = (Fqs-Fqm)/Xls;
-                    Ids = (Fds-Fdm)/Xls;
-
-                    Te = 3/2*Polos/2*1/weles*(Fds*Iqs - Fqs*Ids);
-
-                    % Solução mecânica
-
-                    wr = wr + h*(A*wr + B1*Te + B2*Tl);
-                    wrpm = wr*2/Polos*60/(2*pi);
-
-                end
-
-                obj.wrpm_vetor(k) = wrpm;
-                obj.iqs_vetor(k) = Iqs;
-                obj.ids_vetor(k) = Ids;
-                obj.t_vetor(k) = Tsc*(k-1);
-            end
-            %
-            % load('Dados/Iqs.mat');
-            % load('Dados/Ids.mat');
-            % load('Dados/wr.mat');
-
-            constante_wr_vetor = 891.11 * ones(size(obj.t_vetor));
-            constante_iqs_vetor = 4.85 * ones(size(obj.t_vetor));
-            constante_ids_vetor = 9.72 * ones(size(obj.t_vetor));
-
-            figure; % Cria uma nova janela de figura
-            plot(obj.t_vetor, obj.wrpm_vetor,obj.t_vetor, constante_wr_vetor, 'LineWidth', 2); % Plota wrpm_vetor
-            title('Velocidade (wrpm) x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Velocidade (wrpm)');
-            grid on; % Adiciona uma grade para melhor visualização
-            xlim([0.8, 1])
-            ylim([0.98*891.11, 1.02*891.11])
-
-            figure; % Cria outra nova janela de figura
-            plot(obj.t_vetor, obj.iqs_vetor,obj.t_vetor, constante_iqs_vetor, 'LineWidth', 2); % Plota iqs_vetor
-            title('Corrente iqs x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente iqs (A)');
-            grid on;
-            xlim([0.8, 1])
-            % ylim([0.98*4.85, 1.02*4.85])
-
-            figure; % Cria mais uma nova janela de figura
-            plot(obj.t_vetor, obj.ids_vetor,obj.t_vetor, constante_ids_vetor, 'LineWidth', 2); % Plota ids_vetor
-            title('Corrente ids x Tempo');
-            legend('Estimada','Real')
-            xlabel('Tempo (s)');
-            ylabel('Corrente ids (A)');
-            grid on;
-            xlim([0.8, 1])
-            ylim([0.98*9.72, 1.02*9.72])
         end
 
         function plotGA(obj)
@@ -1279,5 +1057,4 @@ classdef GAPI_2
             end
         end
     end
-
 end
