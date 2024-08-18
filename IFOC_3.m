@@ -102,6 +102,8 @@ U_id_vetor = zeros(1,Np);
 e_w_vetor = zeros(1,Np);
 e_iq_vetor = zeros(1,Np);
 e_id_vetor = zeros(1,Np);
+iqs_atrasado_vetor = zeros(1,Np);
+ids_atrasado_vetor = zeros(1,Np);
 
 %% Torque de Carga
 
@@ -120,6 +122,13 @@ Ids_ref = 10*lambda_nonminal * ((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
 w_nom_ref = 2*pi*60;
 
 w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
+
+%% buffer de atraso
+% Inicializando buffers para armazenar os valores anteriores
+buffer_size = 10;  % Tamanho do atraso (número de amostras)
+buffer_index = 1;
+Iqs_buffer = zeros(1, buffer_size);
+Ids_buffer = zeros(1, buffer_size);
 
 %% Loop Simulação Motor
 for k = 1:Np
@@ -223,7 +232,20 @@ for k = 1:Np
 
     end
 
+    % Extração do valor atrasado do buffer usando o índice circular
+    Iqs_atrasado = Iqs_buffer(buffer_index);
+    Ids_atrasado = Ids_buffer(buffer_index);
+
+    % Atualiza os buffers nos índices circulares com os novos valores
+    Iqs_buffer(buffer_index) = Iqs;
+    Ids_buffer(buffer_index) = Ids;
+
+    % Atualiza o índice circular
+    buffer_index = mod(buffer_index, buffer_size) + 1;
+
     iqs_vetor(k) = Iqs;
+    iqs_atrasado_vetor(k) = Iqs_atrasado;
+    ids_atrasado_vetor(k) = Ids_atrasado;
     ids_vetor(k) = Ids;
     Te_vetor(k) = Te;
     wrpm_vetor(k) = wrpm;
@@ -239,7 +261,6 @@ for k = 1:Np
     e_w_vetor(k) = e_w;
     e_iq_vetor(k) = e_iq;
     e_id_vetor(k) = e_id;
-
 end
 %% graficos
 figure
@@ -249,13 +270,13 @@ legend('Wr','Ref')
 
 figure
 % Plotando os dados
-plot(t,ids_vetor); % tom de cinza escuro
-legend('Ids')
+plot(t,ids_vetor,t,ids_atrasado_vetor); % tom de cinza escuro
+legend('Ids', 'Ids atrasado')
 
 figure
 % Plotando os dados
-plot(t,iqs_vetor, t ,iqs_ref); % tom de cinza escuro
-legend('Iqs', 'Ref')
+plot(t,iqs_vetor, t ,iqs_ref, t, iqs_atrasado_vetor); % tom de cinza escuro
+legend('Iqs', 'Ref', 'Iqs Atrasado')
 
 figure
 % Plotando os dados

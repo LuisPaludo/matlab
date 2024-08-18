@@ -700,21 +700,22 @@ classdef GAPI_2
             c8 = c6*obj.Rr/Xlr;
             c9 = obj.Lm*obj.Rr/Lr;
 
+            limit = 127 * sqrt(2);
+
             %% Loop Simulação Motor
             for k = 1:Np
                 % Estimador de fluxo rotórico e orientação do sist. de referência
 
-                lambda_dr_est = lambda_dr_est*c3 + Ids_atrasado*c4 + Ids_ant*c5;
-                Ids_ant = Ids_atrasado;
+                lambda_dr_est = lambda_dr_est*c3 + Ids_atrasado*c4 + Ids_ant;
+                Ids_ant = Ids_atrasado*c5;
 
-                if(lambda_dr_est > 0.1)
-                    wsl = c9*Iqs_atrasado/lambda_dr_est;
-                else
-                    wsl = 0;
-                end
+                % Define um valor mínimo para lambda_dr_est para evitar divisão por um valor pequeno
+                lambda_min = max(lambda_dr_est, 0.1);
+                
+                % Calcula wsl de forma eficiente
+                wsl = c9 * Iqs_atrasado / lambda_min * (lambda_dr_est > 0.1);
 
-                wr_est = wr + wsl;
-                w = wr_est;
+                w = wr + wsl;
                 theta = theta + Tsc*w;
 
                 %Velocidade
@@ -732,23 +733,23 @@ classdef GAPI_2
                 UI_iq = UI_iq*e_iq*Tsc;
                 U_Iq = KP_iq*e_iq + KI_iq*UI_iq;
 
-                %% Solucionando a EDO eletrica (euler)
-                limit = 127 * sqrt(2);
-                
+                %% Solucionando a EDO eletrica (euler)                
                 U_Iq = min(max(U_Iq, -limit), limit);
                 U_Id = min(max(U_Id, -limit), limit);
                 Vq = U_Iq;
                 Vd = U_Id;
 
+                aux = h*w;
+
                 for ksuper=1:p
                     Fqm = c1*Fqs + c2*Fqr;
                     Fdm = c1*Fds + c2*Fdr;
 
-                    Fqs = Fqs + c6*Vq - h*w*Fds - c7*(Fqs-Fqm);
-                    Fds = Fds + c6*Vd + h*w*Fqs - c7*(Fds-Fdm);
+                    Fqs = Fqs + c6*Vq - aux*Fds - c7*(Fqs-Fqm);
+                    Fds = Fds + c6*Vd + aux*Fqs - c7*(Fds-Fdm);
 
-                    Fqr = Fqr - h*(w-wr)*Fdr + c8*(Fqm-Fqr);
-                    Fdr = Fdr - h*(wr-w)*Fqr + c8*(Fdm-Fdr);
+                    Fqr = Fqr - (aux*Fdr-h*wr*Fdr) + c8*(Fqm-Fqr);
+                    Fdr = Fdr - (h*wr*Fqr-aux*Fqr) + c8*(Fdm-Fdr);
 
                     Iqs = (Fqs-Fqm)*cXls;
                     Ids = (Fds-Fdm)*cXls;
@@ -761,19 +762,19 @@ classdef GAPI_2
 
                 end
 
-                % Desloca o buffer para a direita (atualiza o atraso)
+                % Extração do valor atrasado do buffer usando o índice circular
+                Iqs_atrasado = Iqs_buffer(buffer_index);
+                Ids_atrasado = Ids_buffer(buffer_index);
+            
+                % Atualiza os buffers nos índices circulares com os novos valores
                 Iqs_buffer(buffer_index) = Iqs;
                 Ids_buffer(buffer_index) = Ids;
-
-                % Extrai os valores atrasados do buffer usando o índice circular
-                Iqs_atrasado = Iqs_buffer(mod(buffer_index - 1, buffer_size) + 1);
-                Ids_atrasado = Ids_buffer(mod(buffer_index - 1, buffer_size) + 1);
-
+            
                 % Atualiza o índice circular
                 buffer_index = mod(buffer_index, buffer_size) + 1;
 
                 % Aplicando os pesos no cálculo do erro
-                custo_erros = custo_erros + Tsc*sqrt(e_w^2 + e_id^2);
+                custo_erros = custo_erros + Tsc*sqrt(e_w^2 + 2*e_id^2);
             end
 
             %% Penalização para zeros nos ganhos
@@ -899,6 +900,9 @@ classdef GAPI_2
             c8 = c6*obj.Rr/Xlr;
             c9 = obj.Lm*obj.Rr/Lr;
 
+            % Definir o desvio padrão do ruído
+            std_dev_noise = 0.1;  % Ajuste este valor conforme necessário
+
             %% Loop Simulação Motor
             for k = 1:Np
                 % Estimador de fluxo rotórico e orientação do sist. de referência
@@ -906,11 +910,11 @@ classdef GAPI_2
                 lambda_dr_est = lambda_dr_est*c3 + Ids_atrasado*c4 + Ids_ant*c5;
                 Ids_ant = Ids_atrasado;
 
-                if(lambda_dr_est > 0.1)
-                    wsl = c9*Iqs_atrasado/lambda_dr_est;
-                else
-                    wsl = 0;
-                end
+                % Define um valor mínimo para lambda_dr_est para evitar divisão por um valor pequeno
+                lambda_min = max(lambda_dr_est, 0.1);
+                
+                % Calcula wsl de forma eficiente
+                wsl = c9 * Iqs_atrasado / lambda_min * (lambda_dr_est > 0.1);
 
                 wr_est = wr + wsl;
                 w = wr_est;
@@ -952,6 +956,10 @@ classdef GAPI_2
                     Iqs = (Fqs-Fqm)*cXls;
                     Ids = (Fds-Fdm)*cXls;
 
+                    % Adicionar ruído às medições de corrente
+                    Iqs_measured = Iqs + std_dev_noise * randn();
+                    Ids_measured = Ids + std_dev_noise * randn();
+
                     Te = cTe*(Fds*Iqs - Fqs*Ids);
 
                     % Solução mecânica
@@ -960,22 +968,25 @@ classdef GAPI_2
 
                 end
 
-                % Desloca o buffer para a direita (atualiza o atraso)
-                Iqs_buffer(buffer_index) = Iqs;
-                Ids_buffer(buffer_index) = Ids;
-
-                % Extrai os valores atrasados do buffer usando o índice circular
-                Iqs_atrasado = Iqs_buffer(mod(buffer_index - 1, buffer_size) + 1);
-                Ids_atrasado = Ids_buffer(mod(buffer_index - 1, buffer_size) + 1);
-
+                % Extração do valor atrasado do buffer usando o índice circular
+                Iqs_atrasado = Iqs_buffer(buffer_index);
+                Ids_atrasado = Ids_buffer(buffer_index);
+            
+                % Atualiza os buffers nos índices circulares com os novos valores
+                Iqs_buffer(buffer_index) = Iqs_measured;
+                Ids_buffer(buffer_index) = Ids_measured;
+            
                 % Atualiza o índice circular
                 buffer_index = mod(buffer_index, buffer_size) + 1;
 
                 obj.iqs_vetor(k) = Iqs;
+                iqs_atrasado_vetor(k) = Iqs_atrasado;
+                ids_atrasado_vetor(k) = Ids_atrasado;
                 obj.ids_vetor(k) = Ids;
                 obj.te_vetor(k) = Te;
                 obj.wr_vetor(k) = wr;
             end
+
             %% graficos
             figure
             % Plotando os dados
@@ -984,13 +995,13 @@ classdef GAPI_2
 
             figure
             % Plotando os dados
-            plot(t,obj.ids_vetor); % tom de cinza escuro
-            legend('Ids')
+            plot(t,obj.ids_vetor,t,ids_atrasado_vetor); % tom de cinza escuro
+            legend('Ids', 'Ids atrasado')
 
             figure
             % Plotando os dados
-            plot(t,obj.iqs_vetor, t ,iqs_ref); % tom de cinza escuro
-            legend('Iqs', 'Ref')
+            plot(t,obj.iqs_vetor, t ,iqs_ref, t, iqs_atrasado_vetor); % tom de cinza escuro
+            legend('Iqs', 'Ref', 'Iqs Atrasado')
 
             figure
             % Plotando os dados

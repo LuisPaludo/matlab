@@ -94,7 +94,7 @@ for loopAtual = 1:numExecucoes
                 varIndex = varIndex + 1;
 
                 % Opcional: plotar resultados
-                gaObj.plotMotor;
+                % gaObj.plotMotor;
                 % gaObj.plotGA;
             end
         end
