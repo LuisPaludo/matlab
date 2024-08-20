@@ -601,7 +601,7 @@ classdef GAPI_2
             p = 10;                                        % Numero de partes que o intervalo discreto e dividido
             h = Tsc/p;                                     % Passo de amostragem continuo
             Tsimu = 0.7;                                    % Tempo de Simulação
-            Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
+            Np = Tsimu/Tsc;                             % Número de Pontos (vetores)
 
             %% Parâmetros do Motor
 
@@ -658,6 +658,7 @@ classdef GAPI_2
             custo_erros = 0;
             Iqs_atrasado = 0;
             Ids_atrasado = 0;
+            
 
             %% buffer de atraso
             % Inicializando buffers para armazenar os valores anteriores
@@ -677,6 +678,7 @@ classdef GAPI_2
             lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
 
             Ids_ref = 10*lambda_nonminal*((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
+            ids_vetor_auxiliar = zeros(1, length(Ids_ref));
 
             %% Velocidade de Referência
 
@@ -775,7 +777,15 @@ classdef GAPI_2
 
                 % Aplicando os pesos no cálculo do erro
                 custo_erros = custo_erros + Tsc*sqrt(e_w^2 + 2*e_id^2);
+
+                % ids_vetor_auxiliar(k) = Ids_atrasado;
             end
+            % ids_vetor_auxiliar(k+1) = Ids_atrasado;
+            % % Cálculo do erro entre Ids e a corrente de referência
+            % erro_ids = ids_vetor_auxiliar - Ids_ref;
+            % 
+            % % Penalização para erro integral absoluto
+            % penalizacao_erro_integral = sum(abs(erro_ids))/1000;
 
             %% Penalização para zeros nos ganhos
             cost_KP_w = KP_w/10000;
@@ -785,8 +795,12 @@ classdef GAPI_2
             cost_KP_iq = KP_iq/1000;
             cost_KI_iq = KI_iq/1000;
             custo_ganhos = cost_KP_w + cost_KI_w + cost_KP_id + cost_KI_id + cost_KP_iq + cost_KI_iq;
+            
+            if (~KP_w && ~KI_w) || (~KP_id && ~KI_id) || (~KP_iq && ~KI_iq)
+                cost = inf;
+                return;
+            end
 
-            % Custo total
             cost = 2*custo_erros + custo_ganhos;
 
         end
@@ -800,7 +814,7 @@ classdef GAPI_2
             Tsc = 1/f;                                     % Periodo de amostragem do sinal
             p = 10;                                        % Numero de partes que o intervalo discreto e dividido
             h = Tsc/p;                                     % Passo de amostragem continuo
-            Tsimu = 1;                                    % Tempo de Simulação
+            Tsimu = 2;                                    % Tempo de Simulação
             Np = Tsimu/Tsc;                                % Número de Pontos (vetores)
 
             %% Parâmetros do Motor
@@ -861,7 +875,7 @@ classdef GAPI_2
 
             %% buffer de atraso
             % Inicializando buffers para armazenar os valores anteriores
-            buffer_size = obj.buffer;  % Tamanho do atraso (número de amostras)
+            buffer_size = 10;  % Tamanho do atraso (número de amostras)
             buffer_index = 1;
             Iqs_buffer = zeros(1, buffer_size);
             Ids_buffer = zeros(1, buffer_size);
@@ -870,19 +884,19 @@ classdef GAPI_2
 
             Tn = P*Polos/(2*weles);
 
-            Tl =  Tn*0.75*100* ((t-0.6).*(t >= 0.6) - (t-0.61).*(t >= 0.61));
+            Tl =  Tn*0.75*20* ((t-1.3).*(t >= 1.3) - (t-1.35).*(t >= 1.35));
 
             %% Corrente Id de referência
 
             lambda_nonminal = 127/(2*pi*frequencia)/(obj.Lm);
 
-            Ids_ref = 10*lambda_nonminal*((t-0).*(t >= 0) - (t-0.1).*(t >= 0.1));
+            Ids_ref = 5*lambda_nonminal*((t-0).*(t >= 0) - (t-0.2).*(t >= 0.2));
 
             %% Velocidade de Referência
 
             w_nom_ref = 2*pi*60;
 
-            w_ref = 2*w_nom_ref * ((t-0.1).*(t >= 0.1) - (t-0.6).*(t >= 0.6));
+            w_ref = w_nom_ref * ((t-0.2).*(t >= 0.2) - (t-1.2).*(t >= 1.2));
 
             %% Constantes
             cTl = h*B2*Tl;
@@ -901,7 +915,7 @@ classdef GAPI_2
             c9 = obj.Lm*obj.Rr/Lr;
 
             % Definir o desvio padrão do ruído
-            std_dev_noise = 0.1;  % Ajuste este valor conforme necessário
+            std_dev_noise = 1;  % Ajuste este valor conforme necessário
 
             %% Loop Simulação Motor
             for k = 1:Np
@@ -995,8 +1009,8 @@ classdef GAPI_2
 
             figure
             % Plotando os dados
-            plot(t,obj.ids_vetor,t,ids_atrasado_vetor); % tom de cinza escuro
-            legend('Ids', 'Ids atrasado')
+            plot(t,obj.ids_vetor,t,ids_atrasado_vetor, t, Ids_ref); % tom de cinza escuro
+            legend('Ids', 'Ids atrasado', 'Referencia')
 
             figure
             % Plotando os dados
