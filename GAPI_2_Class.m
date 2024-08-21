@@ -18,12 +18,12 @@ mutationRate = 0.15;
 paramNum = 6;
 
 % Limites dos parâmetros
-paramBounds = [0, 20; % KP WR
-    0.01, 20;     % KI WR
-    0, 100;        % KP ID
-    0.001, 100;    % KI ID
-    0, 100;        % KP IQ
-    0.001, 100];   % KI IQ
+paramBounds = [0, 1000; % KP WR
+    0.01, 1000;     % KI WR
+    0, 1000;        % KP ID
+    0.001, 1000;    % KI ID
+    0, 1000;        % KP IQ
+    0.001, 1000];   % KI IQ
 
 % Definindo os parâmetros
 selectionMethods = {'Torneio', 'Roleta', 'Estoc'};
